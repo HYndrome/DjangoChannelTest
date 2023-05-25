@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8"/>
+    <title>Chat Room</title>
+    <style>
+        .canvas {
+            background: #eee;
+        }
+
+        .color-btn {
+            width: 30px;
+            height: 30px;
+            border: 0;
+            border-radius: 0.375rem;
+        }
+
+        .color-btn[data-color='black'] {
+            background: black;
+        }
+        .color-btn[data-color='red'] {
+            background: red;
+        }
+        .color-btn[data-color='green'] {
+            background: green;
+        }
+        .color-btn[data-color='blue'] {
+            background: blue;
+        }
+    </style>
+</head>
+<body>
+    <textarea id="chat-log" cols="100" rows="20"></textarea><br>
+    <input id="chat-message-input" type="text" size="100"><br>
+    <input id="chat-message-submit" type="button" value="Send">
+    {{ room_name|json_script:"room-name" }}
+    <canvas class="canvas" width="600" height="400">
+        This browser does not support the canvas element.
+    </canvas>
+    <div class="control">
+        <button class="color-btn" data-type="color" data-color="black"></button>
+        <button class="color-btn" data-type="color" data-color="red"></button>
+        <button class="color-btn" data-type="color" data-color="green"></button>
+        <button class="color-btn" data-type="color" data-color="blue"></button>
+    </div>
+    <script>
+        const roomName = JSON.parse(document.getElementById('room-name').textContent);
+
+        const chatSocket = new WebSocket(
+            'ws://'
+            + window.location.host
+            + '/ws/chat/'
+            + roomName
+            + '/'
+        );
+
+        chatSocket.onmessage = function(e) {
+            const data = JSON.parse(e.data);
+            if (data.type === 'chat') {
+                document.querySelector('#chat-log').value += (data.message + '\n');
+            } else if (data.type === 'draw') {
+                const { x, y, color } = data;
+                drawOnCanvas(x, y, color);
+            }
+        };
+
+        chatSocket.onclose = function(e) {
+            console.error('Chat socket closed unexpectedly');
+        };
+
+        document.querySelector('#chat-message-input').focus();
+        document.querySelector('#chat-message-input').onkeyup = function(e) {
+            if (e.keyCode === 13) {  // enter, return
+                document.querySelector('#chat-message-submit').click();
+            }
+        };
+
+        document.querySelector('#chat-message-submit').onclick = function(e) {
+            const messageInputDom = document.querySelector('#chat-message-input');
+            const message = messageInputDom.value;
+            chatSocket.send(JSON.stringify({
+                'type': 'chat',
+                'message': message
+            }));
+            messageInputDom.value = '';
+        };
+
+        // Canvas functionality
+        const canvas = document.querySelector('.canvas');
+        const context = canvas.getContext('2d');
+        const control = document.querySelector('.control');
+        let drawingMode = false; // true when drawing
+        let colorVal = 'black'; // color selection
+
+        function downHandler() {
+            drawingMode = true;
+        }
+
+        function upHandler() {
+            drawingMode = false;
+        }
+
+        function drawing(e) {
+            if (!drawingMode) return;
+            const x = e.offsetX;
+            const y = e.offsetY;
+            drawOnCanvas(x, y, colorVal);
+
+            chatSocket.send(JSON.stringify({
+                'type': 'draw',
+                'x': x,
+                'y': y,
+                'color': colorVal
+            }));
+        }
+
+        function drawOnCanvas(x, y, color) {
+            context.beginPath();
+            context.arc(x, y, 10, 0, Math.PI * 2, false);
+            context.fillStyle = color;
+            context.fill();
+        }
+
+        function setColor(e) {
+            colorVal = e.target.getAttribute('data-color');
+        }
+
+        canvas.addEventListener('mousedown', downHandler);
+        canvas.addEventListener('mouseup', upHandler);
+        canvas.addEventListener('mousemove', drawing);
+        control.addEventListener('click', setColor);
+    </script>
+</body>
+</html>
